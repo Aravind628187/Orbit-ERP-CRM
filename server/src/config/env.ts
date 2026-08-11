@@ -8,6 +8,8 @@ const schema = z.object({
   DATABASE_SSL: z.enum(['true', 'false']).default('false'),
   JWT_SECRET: z.string().min(16).default('local-development-secret-change-me'),
   JWT_EXPIRES_IN: z.string().default('8h'),
+  JWT_ISSUER: z.string().default('orbit-erp-api'),
+  JWT_AUDIENCE: z.string().default('orbit-erp-web'),
   CLIENT_URL: z.string().default('http://localhost:5173'),
 });
 
@@ -23,5 +25,7 @@ export const config = {
   databaseSsl: parsed.DATABASE_SSL === 'true',
   jwtSecret: parsed.JWT_SECRET,
   jwtExpiresIn: parsed.JWT_EXPIRES_IN,
+  jwtIssuer: parsed.JWT_ISSUER,
+  jwtAudience: parsed.JWT_AUDIENCE,
   clientOrigins: parsed.CLIENT_URL.split(',').map((origin) => origin.trim()),
 };

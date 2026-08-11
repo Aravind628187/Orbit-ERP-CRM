@@ -19,25 +19,29 @@ export const listFollowups: RequestHandler = async (req, res) => {
   const createdBy = String(req.query.created_by ?? '');
   const dateFrom = String(req.query.date_from ?? '');
   const dateTo = String(req.query.date_to ?? '');
+  const customerId = String(req.query.customer_id ?? '');
   const allowedStatuses = ['', 'Pending', 'Completed', 'Rescheduled', 'Overdue'];
   if (!allowedStatuses.includes(status)) throw new AppError(422, 'Invalid follow-up status.','VALIDATION_ERROR');
   const where = `WHERE ($1='' OR c.customer_name ILIKE $1 OR c.business_name ILIKE $1 OR f.note ILIKE $1)
     AND ($2='' OR ($2='Overdue' AND f.status='Pending' AND f.scheduled_at<NOW()) OR ($2<>'Overdue' AND f.status::text=$2))
     AND ($3='' OR ($3='today' AND f.status='Pending' AND f.scheduled_at::date=CURRENT_DATE) OR ($3='overdue' AND f.status='Pending' AND f.scheduled_at<NOW()) OR ($3='upcoming' AND f.status='Pending' AND f.scheduled_at>=NOW()))
-    AND ($4='' OR f.created_by::text=$4) AND ($5='' OR f.scheduled_at::date >= $5::date) AND ($6='' OR f.scheduled_at::date <= $6::date)`;
-  const values = [`%${search}%`, status, date, createdBy, dateFrom, dateTo];
+    AND ($4='' OR f.created_by::text=$4) AND ($5='' OR f.scheduled_at::date >= $5::date) AND ($6='' OR f.scheduled_at::date <= $6::date)
+    AND ($7='' OR f.customer_id::text=$7)`;
+  const values = [`%${search}%`, status, date, createdBy, dateFrom, dateTo, customerId];
   const select = `SELECT f.*,c.customer_name,c.business_name,c.customer_type,c.status customer_status,
     creator.name created_by_name,completer.name completed_by_name,rescheduler.name rescheduled_by_name,
     CASE WHEN f.status='Pending' AND f.scheduled_at<NOW() THEN 'Overdue' ELSE f.status::text END display_status
     FROM customer_followups f JOIN customers c ON c.id=f.customer_id
     LEFT JOIN users creator ON creator.id=f.created_by LEFT JOIN users completer ON completer.id=f.completed_by
     LEFT JOIN users rescheduler ON rescheduler.id=f.rescheduled_by`;
-  const [rows, count, users] = await Promise.all([
-    pool.query(`${select} ${where} ORDER BY CASE WHEN f.status='Pending' THEN 0 ELSE 1 END,f.scheduled_at ASC NULLS LAST,f.created_at DESC LIMIT $7 OFFSET $8`, [...values, limit, offset]),
+  const [rows, count, users, customers, summary] = await Promise.all([
+    pool.query(`${select} ${where} ORDER BY CASE WHEN f.status='Pending' THEN 0 ELSE 1 END,f.scheduled_at ASC NULLS LAST,f.created_at DESC LIMIT $8 OFFSET $9`, [...values, limit, offset]),
     pool.query(`SELECT COUNT(*) FROM customer_followups f JOIN customers c ON c.id=f.customer_id ${where}`, values),
     pool.query("SELECT id,name FROM users WHERE role IN ('Admin','Sales') ORDER BY name"),
+    pool.query(`SELECT DISTINCT c.id,c.business_name FROM customer_followups f JOIN customers c ON c.id=f.customer_id ORDER BY c.business_name`),
+    pool.query(`SELECT COUNT(*) FILTER(WHERE status='Pending' AND scheduled_at::date=CURRENT_DATE)::int due_today,COUNT(*) FILTER(WHERE status='Pending' AND scheduled_at<NOW())::int overdue,COUNT(*) FILTER(WHERE status='Pending' AND scheduled_at>NOW())::int upcoming,COUNT(*) FILTER(WHERE status='Completed')::int completed FROM customer_followups`),
   ]);
-  ok(res, { ...paginated(rows.rows, count.rows[0]?.count ?? 0, page, limit), users: users.rows });
+  ok(res, { ...paginated(rows.rows, count.rows[0]?.count ?? 0, page, limit), users: users.rows, customers: customers.rows, summary: summary.rows[0] });
 };
 
 export const completeFollowup: RequestHandler = async (req, res) => {

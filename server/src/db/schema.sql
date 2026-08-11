@@ -80,10 +80,12 @@ CREATE TABLE IF NOT EXISTS products (
   current_stock INTEGER NOT NULL DEFAULT 0 CHECK (current_stock >= 0),
   minimum_stock INTEGER NOT NULL DEFAULT 0 CHECK (minimum_stock >= 0),
   warehouse_location VARCHAR(120) NOT NULL,
+  image_url TEXT,
   created_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
 CREATE INDEX IF NOT EXISTS idx_products_search ON products(product_name, sku, category);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_warehouse ON products(warehouse_location);
@@ -137,6 +139,23 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(30) NOT NULL,
+  title VARCHAR(140) NOT NULL,
+  message TEXT NOT NULL,
+  to_path TEXT,
+  dedupe_key VARCHAR(220) NOT NULL,
+  entity_type VARCHAR(60),
+  entity_id UUID,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, dedupe_key)
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, read_at) WHERE read_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_challans_status_created ON challans(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_challans_number ON challans(challan_number);
 

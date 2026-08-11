@@ -14,7 +14,11 @@ export const login: RequestHandler = async (req, res) => {
   const user = result.rows[0];
   if (!user || !(await bcrypt.compare(input.password, user.password_hash))) throw new AppError(401, 'Email or password is incorrect.', 'INVALID_CREDENTIALS');
   const payload: AuthUser = { id: user.id, name: user.name, email: user.email, role: user.role };
-  const token = jwt.sign(payload, config.jwtSecret, { expiresIn: config.jwtExpiresIn } as SignOptions);
+  const token = jwt.sign(payload, config.jwtSecret, {
+    expiresIn: config.jwtExpiresIn,
+    issuer: config.jwtIssuer,
+    audience: config.jwtAudience,
+  } as SignOptions);
   await recordAudit({ actorId: user.id, action: 'user.login', entityType: 'user', entityId: user.id, description: `${user.name} signed in.` });
   ok(res, { token, user: payload });
 };

@@ -1,9 +1,13 @@
 import type { RequestHandler } from 'express';
 import { pool } from '../db/pool.js';
-import { ok, paginated, parsePagination } from '../utils/http.js';
+import { AppError, ok, paginated, parsePagination } from '../utils/http.js';
 
 export const getDashboard: RequestHandler = async(req,res)=>{
   const role=req.user.role;
+  const range=String(req.query.range??'30D').toUpperCase();
+  const ranges: Record<string,number>={ '7D':7,'30D':30,'90D':90,'12M':365 };
+  if(!ranges[range])throw new AppError(422,'Invalid dashboard range.','VALIDATION_ERROR');
+  const rangeDays=ranges[range];
   const crm=role==='Admin'||role==='Sales',inventoryAccess=role!=='Accounts',sales=role!=='Warehouse',admin=role==='Admin',confirmedOnly=role==='Warehouse'||role==='Accounts';
   const [summary,revenue,customerStatus,inventory,activity,lowStock,followups,recentMovements,recentChallans]=await Promise.all([
     pool.query(`SELECT
@@ -19,7 +23,7 @@ export const getDashboard: RequestHandler = async(req,res)=>{
       (SELECT COUNT(*) FROM challans WHERE status='Confirmed') confirmed_challans,
       (SELECT COALESCE(SUM(total_quantity),0) FROM challans WHERE status='Confirmed') confirmed_units,
       (SELECT COALESCE(AVG(total_amount),0) FROM challans WHERE status='Confirmed') average_challan_value`,[crm,inventoryAccess,sales]),
-    sales?pool.query(`SELECT TO_CHAR(d.day,'Mon DD') label,COALESCE(SUM(c.total_amount),0)::numeric value FROM generate_series(CURRENT_DATE-INTERVAL '29 days',CURRENT_DATE,INTERVAL '1 day') d(day) LEFT JOIN challans c ON c.created_at::date=d.day::date AND c.status='Confirmed' GROUP BY d.day ORDER BY d.day`):Promise.resolve({rows:[]}),
+    sales?pool.query(`SELECT TO_CHAR(d.day,CASE WHEN $1>90 THEN 'Mon YYYY' ELSE 'Mon DD' END) label,COALESCE(SUM(c.total_amount),0)::numeric value FROM generate_series(CURRENT_DATE-($1::int-1)*INTERVAL '1 day',CURRENT_DATE,CASE WHEN $1>90 THEN INTERVAL '1 month' ELSE INTERVAL '1 day' END) d(day) LEFT JOIN challans c ON c.created_at>=d.day AND c.created_at<d.day+CASE WHEN $1>90 THEN INTERVAL '1 month' ELSE INTERVAL '1 day' END AND c.status='Confirmed' GROUP BY d.day ORDER BY d.day`,[rangeDays]):Promise.resolve({rows:[]}),
     crm?pool.query(`SELECT status,COUNT(*)::int value FROM customers GROUP BY status ORDER BY status`):Promise.resolve({rows:[]}),
     inventoryAccess?pool.query(`SELECT CASE WHEN current_stock=0 THEN 'Out of Stock' WHEN current_stock<=minimum_stock THEN 'Low Stock' ELSE 'Healthy' END status,COUNT(*)::int value FROM products GROUP BY 1 ORDER BY 1`):Promise.resolve({rows:[]}),
     admin?pool.query(`SELECT a.*,u.name actor_name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 8`):Promise.resolve({rows:[]}),
@@ -28,7 +32,7 @@ export const getDashboard: RequestHandler = async(req,res)=>{
     (admin||role==='Warehouse')?pool.query(`SELECT m.id,m.movement_type,m.quantity_changed,m.reason,m.created_at,p.id product_id,p.product_name,p.sku,u.name created_by_name FROM stock_movements m JOIN products p ON p.id=m.product_id LEFT JOIN users u ON u.id=m.created_by ORDER BY m.created_at DESC LIMIT 6`):Promise.resolve({rows:[]}),
     pool.query(`SELECT c.id,c.challan_number,c.status,c.total_amount,c.created_at,c.customer_snapshot->>'business_name' business_name,u.name created_by FROM challans c LEFT JOIN users u ON u.id=c.created_by WHERE (NOT $1::boolean OR c.status='Confirmed') ORDER BY c.created_at DESC LIMIT 6`,[confirmedOnly]),
   ]);
-  ok(res,{role,summary:summary.rows[0],revenueTrend:revenue.rows,customerStatus:customerStatus.rows,inventoryHealth:inventory.rows,recentActivity:recentChallans.rows,auditActivity:activity.rows,lowStock:lowStock.rows,followups:followups.rows,recentMovements:recentMovements.rows,recentChallans:recentChallans.rows});
+  ok(res,{role,range,summary:summary.rows[0],revenueTrend:revenue.rows,customerStatus:customerStatus.rows,inventoryHealth:inventory.rows,recentActivity:recentChallans.rows,auditActivity:activity.rows,lowStock:lowStock.rows,followups:followups.rows,recentMovements:recentMovements.rows,recentChallans:recentChallans.rows});
 };
 
 export const getAnalytics: RequestHandler = async(_req,res)=>{
@@ -58,7 +62,23 @@ export const globalSearch: RequestHandler = async(req,res)=>{
 
 export const getNotifications: RequestHandler = async(req,res)=>{
   const inventory=req.user.role!=='Accounts',crm=req.user.role==='Admin'||req.user.role==='Sales';
-  const [stock,followups,challans]=await Promise.all([inventory?pool.query(`SELECT id,product_name,current_stock,minimum_stock FROM products WHERE current_stock<=minimum_stock ORDER BY current_stock LIMIT 5`):Promise.resolve({rows:[]}),crm?pool.query(`SELECT c.id,c.customer_name,c.business_name,f.scheduled_at follow_up_date FROM customer_followups f JOIN customers c ON c.id=f.customer_id WHERE f.status='Pending' AND f.scheduled_at::date<=CURRENT_DATE AND c.status!='Inactive' ORDER BY f.scheduled_at LIMIT 5`):Promise.resolve({rows:[]}),pool.query(`SELECT id,challan_number,created_at FROM challans WHERE status='Confirmed' ORDER BY updated_at DESC LIMIT 3`)]);
-  const items=[...stock.rows.map(p=>({id:`stock-${p.id}`,type:'inventory',title:p.current_stock===0?'Out of stock':'Low stock',message:`${p.product_name} has ${p.current_stock} units remaining.`,to:`/products?product=${p.id}`,created_at:null})),...followups.rows.map(f=>({id:`followup-${f.id}`,type:'followup',title:new Date(f.follow_up_date).getTime()<Date.now()?'Follow-up overdue':'Follow-up due today',message:f.business_name,to:`/customers/${f.id}`,created_at:f.follow_up_date})),...challans.rows.map(c=>({id:`challan-${c.id}`,type:'challan',title:'Challan confirmed',message:c.challan_number,to:`/challans/${c.id}`,created_at:c.created_at}))];
-  ok(res,{items,unread:items.length});
+  const [stock,followups,challans]=await Promise.all([inventory?pool.query(`SELECT id,product_name,current_stock,minimum_stock FROM products WHERE current_stock<=minimum_stock ORDER BY current_stock LIMIT 8`):Promise.resolve({rows:[]}),crm?pool.query(`SELECT f.id followup_id,c.id,c.customer_name,c.business_name,f.scheduled_at follow_up_date FROM customer_followups f JOIN customers c ON c.id=f.customer_id WHERE f.status='Pending' AND f.scheduled_at::date<=CURRENT_DATE AND c.status!='Inactive' ORDER BY f.scheduled_at LIMIT 8`):Promise.resolve({rows:[]}),pool.query(`SELECT id,challan_number,created_at FROM challans WHERE status='Confirmed' ORDER BY updated_at DESC LIMIT 5`)]);
+  const candidates=[...stock.rows.map(p=>({key:`stock-${p.id}-${p.current_stock}`,type:'inventory',title:p.current_stock===0?'Out of stock':'Low stock',message:`${p.product_name} has ${p.current_stock} units remaining.`,to:`/products?product=${p.id}`,entityType:'product',entityId:p.id})),...followups.rows.map(f=>({key:`followup-${f.followup_id}`,type:'followup',title:new Date(f.follow_up_date).getTime()<Date.now()?'Follow-up overdue':'Follow-up due today',message:f.business_name,to:`/customers/${f.id}`,entityType:'customer',entityId:f.id})),...challans.rows.map(c=>({key:`challan-${c.id}`,type:'challan',title:'Challan confirmed',message:c.challan_number,to:`/challans/${c.id}`,entityType:'challan',entityId:c.id}))];
+  await Promise.all(candidates.map(item=>pool.query(`INSERT INTO notifications(user_id,type,title,message,to_path,dedupe_key,entity_type,entity_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(user_id,dedupe_key) DO NOTHING`,[req.user.id,item.type,item.title,item.message,item.to,item.key,item.entityType,item.entityId])));
+  const [items,unread]=await Promise.all([
+    pool.query(`SELECT id,type,title,message,to_path "to",read_at,created_at FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30`,[req.user.id]),
+    pool.query(`SELECT COUNT(*)::int unread FROM notifications WHERE user_id=$1 AND read_at IS NULL`,[req.user.id]),
+  ]);
+  ok(res,{items:items.rows,unread:unread.rows[0].unread});
+};
+
+export const markNotificationRead: RequestHandler = async(req,res)=>{
+  const item=(await pool.query(`UPDATE notifications SET read_at=COALESCE(read_at,NOW()) WHERE id=$1 AND user_id=$2 RETURNING id,read_at`,[req.params.id,req.user.id])).rows[0];
+  if(!item)throw new AppError(404,'Notification not found.','NOTIFICATION_NOT_FOUND');
+  ok(res,item);
+};
+
+export const markAllNotificationsRead: RequestHandler = async(req,res)=>{
+  const result=await pool.query(`UPDATE notifications SET read_at=NOW() WHERE user_id=$1 AND read_at IS NULL`,[req.user.id]);
+  ok(res,{updated:result.rowCount??0});
 };

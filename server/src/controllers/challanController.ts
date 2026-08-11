@@ -9,6 +9,7 @@ interface ProductRow { id:string; product_name:string; sku:string; unit_price:st
 
 export const listChallans: RequestHandler = async(req,res)=>{
   const {page,limit,offset}=parsePagination(req.query), search=String(req.query.search??'').trim(), status=String(req.query.status??'');
+  if(!['','Draft','Confirmed','Cancelled'].includes(status))throw new AppError(422,'Invalid challan status filter.','VALIDATION_ERROR');
   const confirmedOnly=['Warehouse','Accounts'].includes(req.user.role);
   if(confirmedOnly&&status&&status!=='Confirmed')throw new AppError(403,'Your role can access confirmed challans only.','FORBIDDEN');
   const where=`WHERE ($1='' OR c.challan_number ILIKE $1 OR c.customer_snapshot->>'customer_name' ILIKE $1 OR c.customer_snapshot->>'business_name' ILIKE $1) AND ($2='' OR c.status::text=$2) AND (NOT $3::boolean OR c.status='Confirmed')`;
@@ -38,7 +39,10 @@ export const createChallan: RequestHandler = async(req,res)=>{
     if(ids.length!==d.items.length)throw new AppError(422,'Each product may appear only once.','DUPLICATE_CHALLAN_ITEM');
     const products=(await db.query<ProductRow>('SELECT id,product_name,sku,unit_price,current_stock FROM products WHERE id=ANY($1::uuid[])',[ids])).rows;
     const productMap=new Map(products.map((product)=>[product.id,product]));
-    const lines=d.items.map((item)=>{const product=productMap.get(item.product_id);if(!product)throw new AppError(404,'One of the selected products was not found.','PRODUCT_NOT_FOUND');const unitPrice=Number(product.unit_price);return {...item,product_name:product.product_name,sku:product.sku,unit_price:unitPrice,line_total:unitPrice*item.quantity};});
+    const lines=d.items.map((item)=>{const product=productMap.get(item.product_id);if(!product)throw new AppError(404,'One of the selected products was not found.','PRODUCT_NOT_FOUND');const unitPrice=Number(product.unit_price);return {...item,product_name:product.product_name,sku:product.sku,unit_price:unitPrice,line_total:unitPrice*item.quantity};}).sort((a,b)=>a.product_id.localeCompare(b.product_id));
+    // Acquire product locks before challan-item foreign keys take KEY SHARE locks.
+    // This avoids a lock-upgrade deadlock when two confirmed multi-product challans overlap.
+    if(d.status==='Confirmed')await db.query('SELECT id FROM products WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE',[lines.map(line=>line.product_id)]);
     const totalQuantity=lines.reduce((sum,item)=>sum+item.quantity,0),totalAmount=lines.reduce((sum,item)=>sum+item.line_total,0);
     const sequence=(await db.query<{value:string}>("SELECT nextval('challan_number_seq') value")).rows[0]?.value;
     const number=`CH-${new Date().getFullYear()}-${String(sequence).padStart(6,'0')}`;

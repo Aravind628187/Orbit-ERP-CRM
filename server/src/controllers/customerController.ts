@@ -11,6 +11,9 @@ export const listCustomers: RequestHandler = async (req, res) => {
   const search = String(req.query.search ?? '').trim();
   const status = String(req.query.status ?? '');
   const type = String(req.query.type ?? '');
+  if(!['','Lead','Active','Inactive'].includes(status))throw new AppError(422,'Invalid customer status filter.','VALIDATION_ERROR');
+  if(!['','Retail','Wholesale','Distributor'].includes(type))throw new AppError(422,'Invalid customer type filter.','VALIDATION_ERROR');
+  if(req.query.sort&&!allowedSorts[String(req.query.sort)])throw new AppError(422,'Invalid customer sort.','VALIDATION_ERROR');
   const sort = allowedSorts[String(req.query.sort ?? '')] ?? 'c.updated_at';
   const direction = String(req.query.direction).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   const where = `WHERE ($1='' OR c.customer_name ILIKE $1 OR c.business_name ILIKE $1 OR c.mobile ILIKE $1 OR c.email ILIKE $1)
@@ -24,17 +27,19 @@ export const listCustomers: RequestHandler = async (req, res) => {
 };
 
 export const getCustomer: RequestHandler = async (req, res) => {
-  const [customer, followups, challans] = await Promise.all([
+  const [customer, followups, challans, metrics, activity] = await Promise.all([
     pool.query(`SELECT c.*,u.name owner_name FROM customers c LEFT JOIN users u ON u.id=c.created_by WHERE c.id=$1`, [req.params.id]),
     pool.query(`SELECT f.*,u.name created_by_name,cu.name completed_by_name,ru.name rescheduled_by_name,
       CASE WHEN f.status='Pending' AND f.scheduled_at<NOW() THEN 'Overdue' ELSE f.status::text END display_status
       FROM customer_followups f LEFT JOIN users u ON u.id=f.created_by LEFT JOIN users cu ON cu.id=f.completed_by
       LEFT JOIN users ru ON ru.id=f.rescheduled_by WHERE customer_id=$1 ORDER BY f.created_at DESC`, [req.params.id]),
     pool.query(`SELECT id,challan_number,total_quantity,total_amount,status,created_at FROM challans WHERE customer_id=$1 ORDER BY created_at DESC`, [req.params.id]),
+    pool.query(`SELECT COUNT(*) FILTER(WHERE status='Confirmed')::int total_challans,COALESCE(SUM(total_amount) FILTER(WHERE status='Confirmed'),0) sales_value,MAX(created_at) FILTER(WHERE status='Confirmed') last_purchase FROM challans WHERE customer_id=$1`,[req.params.id]),
+    pool.query(`SELECT a.id,a.action,a.description,a.metadata,a.created_at,u.name actor_name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id WHERE a.entity_type='customer' AND a.entity_id=$1 ORDER BY a.created_at DESC LIMIT 30`,[req.params.id]),
   ]);
   const value = customer.rows[0];
   if (!value) throw new AppError(404, 'Customer not found.', 'CUSTOMER_NOT_FOUND');
-  ok(res, { ...value, followups: followups.rows, challans: challans.rows });
+  ok(res, { ...value, metrics: metrics.rows[0], followups: followups.rows, challans: challans.rows, activity: activity.rows });
 };
 
 export const createCustomer: RequestHandler = async (req, res) => {
@@ -51,9 +56,10 @@ export const createCustomer: RequestHandler = async (req, res) => {
 export const updateCustomer: RequestHandler = async (req, res) => {
   const d = customerSchema.parse(req.body);
   const result = await withTransaction(async (db) => {
+    const previous=(await db.query('SELECT status,business_name FROM customers WHERE id=$1 FOR UPDATE',[req.params.id])).rows[0];
+    if (!previous) throw new AppError(404, 'Customer not found.', 'CUSTOMER_NOT_FOUND');
     const updated = (await db.query(`UPDATE customers SET customer_name=$1,mobile=$2,email=$3,business_name=$4,gst_number=$5,customer_type=$6,address=$7,status=$8,follow_up_date=$9,notes=$10,updated_at=NOW() WHERE id=$11 RETURNING *`, [d.customer_name,d.mobile,d.email,d.business_name,d.gst_number,d.customer_type,d.address,d.status,d.follow_up_date,d.notes,req.params.id])).rows[0];
-    if (!updated) throw new AppError(404, 'Customer not found.', 'CUSTOMER_NOT_FOUND');
-    await recordAudit({ actorId: req.user.id, action: 'customer.updated', entityType: 'customer', entityId: updated.id, description: `${updated.business_name} was updated.` }, db);
+    await recordAudit({ actorId: req.user.id, action: previous.status===updated.status?'customer.updated':'customer.status_changed', entityType: 'customer', entityId: updated.id, description: previous.status===updated.status?`${updated.business_name} was updated.`:`${updated.business_name} moved from ${previous.status} to ${updated.status}.`, metadata:{previousStatus:previous.status,newStatus:updated.status} }, db);
     return updated;
   });
   ok(res, result);

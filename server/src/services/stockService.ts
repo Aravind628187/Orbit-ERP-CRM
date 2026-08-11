@@ -5,7 +5,9 @@ export interface StockLine { product_id: string; quantity: number }
 
 export async function adjustChallanStock(db: PoolClient, challanId: string, items: StockLine[], direction: 'IN' | 'OUT', userId: string): Promise<number> {
   let affected = 0;
-  for (const item of items) {
+  // Always acquire row locks in a stable order so concurrent challans cannot deadlock.
+  const orderedItems = [...items].sort((a,b) => a.product_id.localeCompare(b.product_id));
+  for (const item of orderedItems) {
     const found = await db.query<{ current_stock: number; product_name: string }>(
       'SELECT current_stock,product_name FROM products WHERE id=$1 FOR UPDATE', [item.product_id],
     );

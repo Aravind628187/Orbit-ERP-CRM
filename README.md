@@ -23,7 +23,8 @@ Small distribution teams often manage customer conversations, stock counts, and 
 | Dashboard and challan documents | ✓ | ✓ | ✓ | ✓ |
 | Customers and follow-ups | ✓ | ✓ | — | — |
 | Create/confirm/cancel challans | ✓ | ✓ | — | — |
-| Products and stock movements | ✓ | — | ✓ | — |
+| Product catalogue (read) | ✓ | ✓ | ✓ | — |
+| Product writes and stock movements | ✓ | — | ✓ | — |
 | Analytics | ✓ | — | — | ✓ |
 | Audit logs | ✓ | — | — | — |
 
@@ -51,11 +52,11 @@ The server is organized under `server/src` into controllers, routes, middleware,
 
 ## Database design
 
-Core entities are `users`, `customers`, `customer_followups`, `products`, `stock_movements`, `challans`, `challan_items`, and `audit_logs`. Foreign keys protect relationships; unique constraints protect email, SKU, and challan numbers; checks prevent negative stock and invalid monetary values; indexes cover common status, search, follow-up, entity, and time-order queries.
+Core entities are `users`, `customers`, `customer_followups`, `products`, `stock_movements`, `challans`, `challan_items`, `notifications`, and `audit_logs`. Foreign keys and checks protect relationships, unique identifiers, non-negative stock, and monetary values.
 
 ## Critical business logic
 
-A Draft challan never changes inventory. Confirmation runs inside one PostgreSQL transaction, locks each selected product with `SELECT … FOR UPDATE`, validates all requested quantities, deducts stock, and writes movements. Any shortage returns HTTP `409 INSUFFICIENT_STOCK` with product, available, and requested values and rolls the whole transaction back. Product name, SKU, price, and customer data are snapshotted so historical documents remain stable after catalogue edits. Repeating the same status transition is rejected.
+A Draft challan never changes inventory. Confirmation runs inside one PostgreSQL transaction, locks selected products in deterministic ID order with `SELECT … FOR UPDATE`, validates all requested quantities, deducts stock, and writes movements. Any shortage returns HTTP `409 INSUFFICIENT_STOCK` with product, available, and requested values and rolls the whole transaction back. Product name, SKU, price, and customer data are snapshotted so historical documents remain stable after catalogue edits. Repeating the same status transition is rejected.
 
 ## API overview
 
@@ -66,7 +67,7 @@ All protected endpoints require `Authorization: Bearer <token>`. Success respons
 - Follow-ups: `GET /api/followups`, `PATCH /api/followups/:id/complete`, `POST /api/followups/:id/reschedule`
 - Inventory: `GET|POST /api/products`, `GET|PUT /api/products/:id`, `GET|POST /api/products/:id/movements`, `GET /api/stock-movements`
 - Sales: `GET|POST /api/challans`, `GET /api/challans/:id`, `PATCH /api/challans/:id/status`
-- Intelligence: `GET /api/dashboard`, `/api/analytics`, `/api/audit-logs`, `/api/search`, `/api/notifications`
+- Intelligence: `GET /api/dashboard?range=7D|30D|90D|12M`, `/api/analytics`, `/api/audit-logs`, `/api/search`, `/api/notifications`; `PATCH /api/notifications/:id/read`, `/api/notifications/read-all`
 
 Import `postman/Orbit-ERP.postman_collection.json`; it includes `BASE_URL` and `TOKEN` collection variables.
 
@@ -103,6 +104,8 @@ The frontend is served at `http://localhost:8080`, the API at `:4000`, and Postg
 | `DATABASE_SSL` | Set `true` for managed databases that require TLS |
 | `JWT_SECRET` | Production signing secret; required and validated in production |
 | `JWT_EXPIRES_IN` | Access-token lifetime, default `8h` |
+| `JWT_ISSUER` | Expected token issuer, default `orbit-erp-api` |
+| `JWT_AUDIENCE` | Expected token audience, default `orbit-erp-web` |
 | `PORT` | API port, default `4000` |
 | `BACKEND_PORT` | Docker host port mapped to the API container |
 | `FRONTEND_PORT` | Docker host port mapped to Nginx |
@@ -144,17 +147,16 @@ Deploy the server container with `DATABASE_URL`, a strong `JWT_SECRET`, `CLIENT_
 
 ## Screenshots
 
-Capture the role-aware dashboard, CRM detail, inventory drawer, challan builder, and print document after seeding the local environment.
+Capture the role-aware dashboard, CRM detail, product detail, challan builder, and print document after seeding. Screenshots are intentionally not committed so they cannot drift from the current UI.
 
 ## Known limitations
 
 - Browser print-to-PDF is used instead of server-rendered PDF storage.
-- Assignment authentication uses access tokens only; production should add secure refresh-token rotation or managed identity.
-- Notifications are derived live rather than persisted with per-user read receipts.
+- Assignment authentication uses short-lived bearer access tokens in browser storage (session storage unless “Remember me” is selected). Production should add secure, rotating, HttpOnly refresh cookies or managed identity.
+- Notifications and read receipts are persistent per user, but delivery is in-app only; there is no email/SMS or background push worker.
 
 ## Future improvements
 
 - GST invoice and payment reconciliation modules
 - S3-compatible product-image storage abstraction
-- Persistent notification preferences and read state
 - Ephemeral PostgreSQL integration tests and browser end-to-end coverage

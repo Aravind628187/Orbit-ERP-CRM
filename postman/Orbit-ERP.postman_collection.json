@@ -1,25 +1,56 @@
 {
-  "info": {"name":"Orbit ERP API","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json","description":"Core ERP/CRM API flow. Run Login first; the JWT is saved automatically."},
-  "variable": [{"key":"BASE_URL","value":"http://localhost:4000/api"},{"key":"TOKEN","value":""},{"key":"baseUrl","value":"http://localhost:4000/api"},{"key":"token","value":""},{"key":"customerId","value":""},{"key":"productId","value":""},{"key":"challanId","value":""}],
-  "item": [
-    {"name":"Authentication","item":[
-      {"name":"Login","event":[{"listen":"test","script":{"exec":["const body = pm.response.json();","pm.collectionVariables.set('TOKEN', body.data.token);"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"email\": \"admin@orbit.local\",\n  \"password\": \"Orbit@123\"\n}"},"url":"{{BASE_URL}}/auth/login"}},
-      {"name":"Current user","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"}],"url":"{{BASE_URL}}/auth/me"}}
+  "info":{"name":"Orbit ERP + CRM API — P1","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json","description":"End-to-end case-study collection. Run Authentication / Login first. Requests assert the common API envelope and save created IDs."},
+  "auth":{"type":"bearer","bearer":[{"key":"token","value":"{{TOKEN}}","type":"string"}]},
+  "event":[{"listen":"test","script":{"exec":["pm.test('Expected HTTP status', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));","pm.test('Uses the Orbit API envelope', () => pm.expect(pm.response.json()).to.have.property('success', true));"]}}],
+  "variable":[{"key":"BASE_URL","value":"http://localhost:4000/api"},{"key":"TOKEN","value":""},{"key":"customerId","value":""},{"key":"followupId","value":""},{"key":"productId","value":""},{"key":"challanId","value":""},{"key":"notificationId","value":""}],
+  "item":[
+    {"name":"AUTH","item":[
+      {"name":"Login","auth":{"type":"noauth"},"event":[{"listen":"test","script":{"exec":["const data=pm.response.json().data; pm.collectionVariables.set('TOKEN',data.token); pm.expect(data.user.role).to.eql('Admin');"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"email\": \"admin@orbit.local\",\n  \"password\": \"Orbit@123\"\n}"},"url":"{{BASE_URL}}/auth/login"}},
+      {"name":"Me","request":{"method":"GET","url":"{{BASE_URL}}/auth/me"}}
     ]},
-    {"name":"Customers","item":[
-      {"name":"List customers","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"}],"url":"{{BASE_URL}}/customers?page=1&limit=10&search="}},
-      {"name":"Create customer","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('customerId', pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"customer_name\": \"Demo Buyer\",\n  \"mobile\": \"9876500000\",\n  \"email\": \"buyer@example.com\",\n  \"business_name\": \"Demo Distribution\",\n  \"gst_number\": \"27ABCDE1234F1Z5\",\n  \"customer_type\": \"Wholesale\",\n  \"address\": \"Mumbai, Maharashtra\",\n  \"status\": \"Active\",\n  \"follow_up_date\": null,\n  \"notes\": \"Created through Postman\"\n}"},"url":"{{BASE_URL}}/customers"}},
-      {"name":"Add follow-up","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"note\": \"Shared the new catalogue and pricing.\",\n  \"next_follow_up_date\": \"2026-08-20\"\n}"},"url":"{{BASE_URL}}/customers/{{customerId}}/followups"}}
+    {"name":"CUSTOMERS","item":[
+      {"name":"Create","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('customerId',pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n \"customer_name\":\"Demo Buyer\",\n \"mobile\":\"9876500000\",\n \"email\":\"buyer@example.com\",\n \"business_name\":\"Demo Distribution\",\n \"gst_number\":\"27ABCDE1234F1Z5\",\n \"customer_type\":\"Wholesale\",\n \"address\":\"Mumbai, Maharashtra\",\n \"status\":\"Active\",\n \"follow_up_date\":null,\n \"notes\":\"Postman workflow\"\n}"},"url":"{{BASE_URL}}/customers"}},
+      {"name":"List + search + filter","request":{"method":"GET","url":"{{BASE_URL}}/customers?page=1&limit=10&search=Demo&status=Active&type=Wholesale&sort=name&direction=asc"}},
+      {"name":"Detail","request":{"method":"GET","url":"{{BASE_URL}}/customers/{{customerId}}"}},
+      {"name":"Update","request":{"method":"PUT","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n \"customer_name\":\"Demo Buyer\",\n \"mobile\":\"9876500000\",\n \"email\":\"buyer@example.com\",\n \"business_name\":\"Demo Distribution Updated\",\n \"gst_number\":\"27ABCDE1234F1Z5\",\n \"customer_type\":\"Wholesale\",\n \"address\":\"Mumbai, Maharashtra\",\n \"status\":\"Active\",\n \"follow_up_date\":null,\n \"notes\":\"Updated via Postman\"\n}"},"url":"{{BASE_URL}}/customers/{{customerId}}"}},
+      {"name":"Add follow-up","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('followupId',pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"note\":\"Discuss next order\",\"next_follow_up_date\":\"2026-08-20\"}"},"url":"{{BASE_URL}}/customers/{{customerId}}/followups"}}
     ]},
-    {"name":"Inventory","item":[
-      {"name":"List products","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"}],"url":"{{BASE_URL}}/products?page=1&limit=10"}},
-      {"name":"Create product","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('productId', pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"product_name\": \"Demo Product\",\n  \"sku\": \"DEMO-001\",\n  \"category\": \"Demo\",\n  \"unit_price\": 999,\n  \"initial_stock\": 50,\n  \"minimum_stock\": 10,\n  \"warehouse_location\": \"Warehouse A · Rack 01\"\n}"},"url":"{{BASE_URL}}/products"}},
-      {"name":"Stock movement","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"movement_type\": \"IN\",\n  \"quantity\": 10,\n  \"reason\": \"Supplier delivery\"\n}"},"url":"{{BASE_URL}}/products/{{productId}}/movements"}}
+    {"name":"FOLLOW-UPS","item":[
+      {"name":"List and filter","request":{"method":"GET","url":"{{BASE_URL}}/followups?page=1&limit=10&status=Pending&customer_id={{customerId}}"}},
+      {"name":"Complete","request":{"method":"PATCH","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}"},"url":"{{BASE_URL}}/followups/{{followupId}}/complete"}},
+      {"name":"Reschedule","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"scheduled_at\":\"2026-08-25T10:00:00+05:30\",\"note\":\"Revised discussion date\"}"},"url":"{{BASE_URL}}/followups/{{followupId}}/reschedule"}}
     ]},
-    {"name":"Challans","item":[
-      {"name":"Create confirmed challan","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('challanId', pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"customer_id\": \"{{customerId}}\",\n  \"items\": [{\"product_id\": \"{{productId}}\", \"quantity\": 2}],\n  \"status\": \"Confirmed\",\n  \"notes\": \"Handle with care\"\n}"},"url":"{{BASE_URL}}/challans"}},
-      {"name":"Get challan","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"}],"url":"{{BASE_URL}}/challans/{{challanId}}"}},
-      {"name":"Cancel and return stock","request":{"method":"PATCH","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"status\":\"Cancelled\"}"},"url":"{{BASE_URL}}/challans/{{challanId}}/status"}}
+    {"name":"PRODUCTS","item":[
+      {"name":"Create","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('productId',pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n \"product_name\":\"Demo Product\",\n \"sku\":\"DEMO-{{$timestamp}}\",\n \"category\":\"Office Supplies\",\n \"unit_price\":999,\n \"initial_stock\":50,\n \"minimum_stock\":10,\n \"warehouse_location\":\"Warehouse A · Rack 01\",\n \"image_url\":null\n}"},"url":"{{BASE_URL}}/products"}},
+      {"name":"List + filters","request":{"method":"GET","url":"{{BASE_URL}}/products?page=1&limit=10&search=Demo&stock=healthy&sort=name&direction=asc"}},
+      {"name":"Detail","request":{"method":"GET","url":"{{BASE_URL}}/products/{{productId}}"}}
+    ]},
+    {"name":"STOCK","item":[
+      {"name":"Ledger","request":{"method":"GET","url":"{{BASE_URL}}/stock-movements?page=1&limit=15&type=IN"}},
+      {"name":"Stock IN","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"movement_type\":\"IN\",\"quantity\":10,\"reason\":\"Supplier delivery\"}"},"url":"{{BASE_URL}}/products/{{productId}}/movements"}},
+      {"name":"Stock OUT","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"movement_type\":\"OUT\",\"quantity\":2,\"reason\":\"Damaged goods\"}"},"url":"{{BASE_URL}}/products/{{productId}}/movements"}},
+      {"name":"Insufficient stock — expect 409","event":[{"listen":"test","script":{"exec":["pm.test('Stock is protected',()=>pm.expect(pm.response.code).to.eql(409));","pm.expect(pm.response.json().error.code).to.eql('INSUFFICIENT_STOCK');"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"movement_type\":\"OUT\",\"quantity\":999999,\"reason\":\"Negative stock protection test\"}"},"url":"{{BASE_URL}}/products/{{productId}}/movements"}}
+    ]},
+    {"name":"CHALLANS","item":[
+      {"name":"Create draft","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('challanId',pm.response.json().data.id); pm.expect(pm.response.json().data.status).to.eql('Draft');"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"customer_id\":\"{{customerId}}\",\"items\":[{\"product_id\":\"{{productId}}\",\"quantity\":2}],\"status\":\"Draft\",\"notes\":\"Postman draft\"}"},"url":"{{BASE_URL}}/challans"}},
+      {"name":"Confirm draft","request":{"method":"PATCH","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"status\":\"Confirmed\"}"},"url":"{{BASE_URL}}/challans/{{challanId}}/status"}},
+      {"name":"List","request":{"method":"GET","url":"{{BASE_URL}}/challans?page=1&limit=10&status=Confirmed"}},
+      {"name":"Detail","request":{"method":"GET","url":"{{BASE_URL}}/challans/{{challanId}}"}},
+      {"name":"Cancel + restore stock","request":{"method":"PATCH","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"status\":\"Cancelled\"}"},"url":"{{BASE_URL}}/challans/{{challanId}}/status"}},
+      {"name":"Insufficient stock — expect 409","event":[{"listen":"test","script":{"exec":["pm.test('Confirmation rejected',()=>pm.expect(pm.response.code).to.eql(409));"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"customer_id\":\"{{customerId}}\",\"items\":[{\"product_id\":\"{{productId}}\",\"quantity\":999999}],\"status\":\"Confirmed\"}"},"url":"{{BASE_URL}}/challans"}}
+    ]},
+    {"name":"INTELLIGENCE","item":[
+      {"name":"Dashboard 30D","request":{"method":"GET","url":"{{BASE_URL}}/dashboard?range=30D"}},
+      {"name":"Analytics","request":{"method":"GET","url":"{{BASE_URL}}/analytics"}},
+      {"name":"Global search","request":{"method":"GET","url":"{{BASE_URL}}/search?q=Demo"}},
+      {"name":"Notifications","event":[{"listen":"test","script":{"exec":["const items=pm.response.json().data.items;if(items.length)pm.collectionVariables.set('notificationId',items[0].id);"]}}],"request":{"method":"GET","url":"{{BASE_URL}}/notifications"}},
+      {"name":"Mark notification read","request":{"method":"PATCH","url":"{{BASE_URL}}/notifications/{{notificationId}}/read"}},
+      {"name":"Mark all notifications read","request":{"method":"PATCH","url":"{{BASE_URL}}/notifications/read-all"}},
+      {"name":"Audit log","request":{"method":"GET","url":"{{BASE_URL}}/audit-logs?page=1&limit=10"}}
+    ]},
+    {"name":"ROLE ACCESS TESTS","item":[
+      {"name":"Warehouse cannot read customers — expect 403","event":[{"listen":"test","script":{"exec":["pm.test('RBAC enforced',()=>pm.expect(pm.response.code).to.eql(403));"]}}],"request":{"method":"GET","description":"Log in as warehouse@orbit.local first, then run this request.","url":"{{BASE_URL}}/customers"}},
+      {"name":"Accounts cannot read products — expect 403","event":[{"listen":"test","script":{"exec":["pm.test('RBAC enforced',()=>pm.expect(pm.response.code).to.eql(403));"]}}],"request":{"method":"GET","description":"Log in as accounts@orbit.local first, then run this request.","url":"{{BASE_URL}}/products"}}
     ]}
   ]
 }
