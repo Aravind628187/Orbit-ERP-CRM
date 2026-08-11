@@ -27,7 +27,7 @@ export default function Layout({children}){
  const markAll=async()=>{await api('/notifications/read-all',{method:'PATCH'});setNotifications(value=>({...value,unread:0,items:value.items.map(item=>({...item,read_at:item.read_at||new Date().toISOString()}))}))};
  const quick=quickByRole[user.role];
  return <div className={`app-shell ${collapsed?'sidebar-collapsed':''}`}>
-  <aside className={mobile?'open':''}><div className="brand"><span>O</span><div>Orbit<small>OPERATIONS INTELLIGENCE</small></div><button aria-label="Close navigation" onClick={()=>setMobile(false)}><X/></button></div>
+  <aside className={mobile?'open':''}><div className="brand"><img className="brand-logo" src="/assets/orbit-logo.png" alt="Orbit ERP logo"/><div>Orbit ERP<small>OPERATIONS INTELLIGENCE</small></div><button aria-label="Close navigation" onClick={()=>setMobile(false)}><X/></button></div>
    <nav>{visible.map(([label,links])=><div className="nav-section" key={label}><small>{label}</small>{links.map(([to,text,Icon])=><Tooltip label={text} key={to}><NavLink to={to} end={to==='/' }><Icon/><span>{text}</span></NavLink></Tooltip>)}</div>)}</nav>
    <button className="sidebar-toggle" aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} onClick={()=>setCollapsed(value=>!value)}>{collapsed?<PanelLeftOpen/>:<PanelLeftClose/>}<span>{collapsed?'Expand':'Collapse'}</span></button>
    <div className="profile"><span className="avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{user.role}</small></div><DropdownMenu label="Profile menu" trigger={<span aria-hidden="true">•••</span>} align="left"><MenuItem icon={LogOut} danger onClick={()=>{logout();navigate('/login')}}>Sign out</MenuItem></DropdownMenu></div>
