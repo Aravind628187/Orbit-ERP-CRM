@@ -1,0 +1,25 @@
+import{useCallback,useEffect,useState}from'react';
+import{CalendarClock,Check,ChevronRight,Clock3,Search}from'lucide-react';
+import{useNavigate}from'react-router-dom';
+import{api,queryString}from'../lib/api.js';
+import{date}from'../lib/format.js';
+import{EmptyState,ErrorState,Field,Loading,Modal,Pagination}from'../components/UI.jsx';
+import{useToast}from'../context/ToastContext.jsx';
+
+const tabs=[['today','Today'],['overdue','Overdue'],['upcoming','Upcoming'],['completed','Completed']];
+export default function Followups(){
+ const[data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[reschedule,setReschedule]=useState(null);
+ const[query,setQuery]=useState({search:'',date:'today',status:'',created_by:'',date_from:'',date_to:'',page:1,limit:10});
+ const navigate=useNavigate(),toast=useToast();
+ const load=useCallback(async()=>{setError('');try{setData(await api(`/followups${queryString(query)}`))}catch(e){setError(e.message);setData(null)}},[query]);
+ useEffect(()=>{const id=setTimeout(load,200);return()=>clearTimeout(id)},[load]);
+ const set=(key,value)=>setQuery(v=>({...v,[key]:value,page:1}));
+ const complete=async item=>{setBusy(true);try{await api(`/followups/${item.id}/complete`,{method:'PATCH',body:{}});toast(`Follow-up completed for ${item.business_name}.`);await load()}catch(e){toast(e.message,'error')}finally{setBusy(false)}};
+ const saveReschedule=async e=>{e.preventDefault();setBusy(true);try{await api(`/followups/${reschedule.id}/reschedule`,{method:'POST',body:{scheduled_at:new Date(reschedule.scheduled_at).toISOString(),note:reschedule.new_note||undefined}});toast(`Follow-up rescheduled for ${reschedule.business_name}.`);setReschedule(null);await load()}catch(e){toast(e.message,'error')}finally{setBusy(false)}};
+ const active=query.status==='Completed'?'completed':query.date||'today';
+ return <><div className="page-heading"><div><div className="eyebrow neutral"><CalendarClock/> CRM AGENDA</div><h1>Follow-ups</h1><p>Complete, reschedule, and review every customer conversation.</p></div></div>
+ <div className="panel list-panel"><div className="followup-tabs">{tabs.map(([value,label])=><button key={value} className={active===value?'active':''} onClick={()=>setQuery(v=>({...v,date:value==='completed'?'':value,status:value==='completed'?'Completed':'',page:1}))}>{label}</button>)}</div>
+ <div className="list-toolbar"><div className="search-input"><Search/><input value={query.search} onChange={e=>set('search',e.target.value)} placeholder="Search customer, business, or note…"/></div><select value={query.created_by} onChange={e=>set('created_by',e.target.value)}><option value="">All owners</option>{data?.users?.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select><input aria-label="From date" type="date" value={query.date_from} onChange={e=>set('date_from',e.target.value)}/><input aria-label="To date" type="date" value={query.date_to} onChange={e=>set('date_to',e.target.value)}/></div>
+ {error?<ErrorState title="Unable to load follow-ups" message={error} retry={load}/>:!data?<Loading/>:data.data.length?<><div className="operational-list">{data.data.map(f=><div className="followup-row" key={f.id}><span className={`date-tile ${f.display_status==='Overdue'?'hot':''}`}><b>{date(f.scheduled_at||f.next_follow_up_date,{day:'2-digit'})}</b><small>{date(f.scheduled_at||f.next_follow_up_date,{month:'short'}).toUpperCase()}</small></span><div><b>{f.business_name}</b><small>{f.customer_name} · {f.customer_type}</small><p>{f.note}</p><small>{f.created_by_name} · {date(f.scheduled_at,{dateStyle:'medium',timeStyle:'short'})}</small></div><strong className={f.display_status==='Overdue'?'overdue':''}>{f.display_status}</strong>{f.status==='Pending'&&<div className="row-actions"><button disabled={busy} onClick={()=>complete(f)}><Check/>Complete</button><button disabled={busy} onClick={()=>setReschedule({...f,scheduled_at:'',new_note:''})}><Clock3/>Reschedule</button></div>}<button className="icon-button" aria-label={`Open ${f.business_name}`} onClick={()=>navigate(`/customers/${f.customer_id}`)}><ChevronRight/></button></div>)}</div><Pagination meta={data.meta} onPage={page=>setQuery(v=>({...v,page}))}/></>:<EmptyState title="No follow-ups in this view" message="Try another agenda tab or adjust the filters."/>}</div>
+ <Modal open={Boolean(reschedule)} onClose={()=>setReschedule(null)} title="Reschedule follow-up" subtitle={reschedule?.business_name}>{reschedule&&<form onSubmit={saveReschedule}><Field label="New date and time"><input type="datetime-local" required value={reschedule.scheduled_at} onChange={e=>setReschedule({...reschedule,scheduled_at:e.target.value})}/></Field><Field label="Updated note" hint="Optional"><textarea value={reschedule.new_note} onChange={e=>setReschedule({...reschedule,new_note:e.target.value})}/></Field><div className="form-actions"><button type="button" className="secondary" onClick={()=>setReschedule(null)}>Cancel</button><button className="primary" disabled={busy}>{busy?'Rescheduling…':'Reschedule'}</button></div></form>}</Modal></>;
+}

@@ -1,0 +1,2 @@
+import { Router } from 'express';import { addFollowup,createCustomer,getCustomer,listCustomers,updateCustomer } from '../controllers/customerController.js';import { allowRoles } from '../middleware/auth.js';import { asyncHandler } from '../utils/http.js';
+const router=Router();router.use(allowRoles('Admin','Sales'));router.get('/',asyncHandler(listCustomers));router.get('/:id',asyncHandler(getCustomer));router.post('/',asyncHandler(createCustomer));router.put('/:id',asyncHandler(updateCustomer));router.post('/:id/followups',asyncHandler(addFollowup));export default router;

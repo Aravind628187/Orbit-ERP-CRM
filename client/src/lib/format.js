@@ -1,0 +1,4 @@
+export const currency=(value)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(Number(value||0));
+export const date=(value,options={day:'2-digit',month:'short',year:'numeric'})=>value?new Intl.DateTimeFormat('en-IN',options).format(new Date(value)):'—';
+export const initials=(name='')=>name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
+export const downloadCsv=(filename,rows)=>{if(!rows?.length)return;const keys=Object.keys(rows[0]);const escape=value=>`"${String(value??'').replaceAll('"','""')}"`;const csv=[keys.map(escape).join(','),...rows.map(row=>keys.map(key=>escape(row[key])).join(','))].join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();URL.revokeObjectURL(url)};

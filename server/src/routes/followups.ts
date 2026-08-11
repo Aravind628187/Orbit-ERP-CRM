@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import { allowRoles } from '../middleware/auth.js';
+import { completeFollowup, listFollowups, rescheduleFollowup } from '../controllers/followupController.js';
+import { asyncHandler } from '../utils/http.js';
+const router=Router();
+router.use(allowRoles('Admin','Sales'));
+router.get('/',asyncHandler(listFollowups));
+router.patch('/:id/complete',asyncHandler(completeFollowup));
+router.post('/:id/reschedule',asyncHandler(rescheduleFollowup));
+export default router;

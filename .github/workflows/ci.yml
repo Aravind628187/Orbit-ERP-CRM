@@ -1,0 +1,42 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: orbit_erp_test
+          POSTGRES_USER: orbit
+          POSTGRES_PASSWORD: orbit_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orbit -d orbit_erp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://orbit:orbit_test_password@localhost:5432/orbit_erp_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install backend and frontend dependencies
+        run: npm ci
+      - name: Backend TypeScript typecheck
+        run: npm run typecheck -w server
+      - name: Backend build
+        run: npm run build -w server
+      - name: Backend unit tests
+        run: npm run test:unit -w server
+      - name: PostgreSQL integration tests
+        run: npm run test:integration -w server
+      - name: Frontend production build
+        run: npm run build -w client

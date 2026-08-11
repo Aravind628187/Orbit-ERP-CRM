@@ -1,0 +1,25 @@
+{
+  "info": {"name":"Orbit ERP API","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json","description":"Core ERP/CRM API flow. Run Login first; the JWT is saved automatically."},
+  "variable": [{"key":"BASE_URL","value":"http://localhost:4000/api"},{"key":"TOKEN","value":""},{"key":"baseUrl","value":"http://localhost:4000/api"},{"key":"token","value":""},{"key":"customerId","value":""},{"key":"productId","value":""},{"key":"challanId","value":""}],
+  "item": [
+    {"name":"Authentication","item":[
+      {"name":"Login","event":[{"listen":"test","script":{"exec":["const body = pm.response.json();","pm.collectionVariables.set('TOKEN', body.data.token);"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"email\": \"admin@orbit.local\",\n  \"password\": \"Orbit@123\"\n}"},"url":"{{BASE_URL}}/auth/login"}},
+      {"name":"Current user","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"}],"url":"{{BASE_URL}}/auth/me"}}
+    ]},
+    {"name":"Customers","item":[
+      {"name":"List customers","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"}],"url":"{{BASE_URL}}/customers?page=1&limit=10&search="}},
+      {"name":"Create customer","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('customerId', pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"customer_name\": \"Demo Buyer\",\n  \"mobile\": \"9876500000\",\n  \"email\": \"buyer@example.com\",\n  \"business_name\": \"Demo Distribution\",\n  \"gst_number\": \"27ABCDE1234F1Z5\",\n  \"customer_type\": \"Wholesale\",\n  \"address\": \"Mumbai, Maharashtra\",\n  \"status\": \"Active\",\n  \"follow_up_date\": null,\n  \"notes\": \"Created through Postman\"\n}"},"url":"{{BASE_URL}}/customers"}},
+      {"name":"Add follow-up","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"note\": \"Shared the new catalogue and pricing.\",\n  \"next_follow_up_date\": \"2026-08-20\"\n}"},"url":"{{BASE_URL}}/customers/{{customerId}}/followups"}}
+    ]},
+    {"name":"Inventory","item":[
+      {"name":"List products","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"}],"url":"{{BASE_URL}}/products?page=1&limit=10"}},
+      {"name":"Create product","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('productId', pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"product_name\": \"Demo Product\",\n  \"sku\": \"DEMO-001\",\n  \"category\": \"Demo\",\n  \"unit_price\": 999,\n  \"initial_stock\": 50,\n  \"minimum_stock\": 10,\n  \"warehouse_location\": \"Warehouse A · Rack 01\"\n}"},"url":"{{BASE_URL}}/products"}},
+      {"name":"Stock movement","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"movement_type\": \"IN\",\n  \"quantity\": 10,\n  \"reason\": \"Supplier delivery\"\n}"},"url":"{{BASE_URL}}/products/{{productId}}/movements"}}
+    ]},
+    {"name":"Challans","item":[
+      {"name":"Create confirmed challan","event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('challanId', pm.response.json().data.id);"]}}],"request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"customer_id\": \"{{customerId}}\",\n  \"items\": [{\"product_id\": \"{{productId}}\", \"quantity\": 2}],\n  \"status\": \"Confirmed\",\n  \"notes\": \"Handle with care\"\n}"},"url":"{{BASE_URL}}/challans"}},
+      {"name":"Get challan","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"}],"url":"{{BASE_URL}}/challans/{{challanId}}"}},
+      {"name":"Cancel and return stock","request":{"method":"PATCH","header":[{"key":"Authorization","value":"Bearer {{TOKEN}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"status\":\"Cancelled\"}"},"url":"{{BASE_URL}}/challans/{{challanId}}/status"}}
+    ]}
+  ]
+}
