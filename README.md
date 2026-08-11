@@ -141,9 +141,53 @@ TEST_DATABASE_URL=postgresql://orbit:password@localhost:5432/orbit_erp_test npm 
 
 CI provisions PostgreSQL, installs dependencies, typechecks/builds the TypeScript API, runs unit and real-database integration tests, and builds the React client.
 
-## Deployment
+## Render deployment
 
-Deploy the server container with `DATABASE_URL`, a strong `JWT_SECRET`, `CLIENT_URL`, and `NODE_ENV=production`; run migrations once as a release task. Deploy the Nginx client image with `VITE_API_URL` targeting the HTTPS API. Use managed PostgreSQL backups and terminate TLS at the platform load balancer.
+The repository contains two deployable applications. The root `Dockerfile` builds the Express API; the React application should be deployed as a separate Render Static Site. The API container runs the idempotent database migration before starting, reads Render's `PORT`, and listens on `0.0.0.0`.
+
+### API web service (Docker)
+
+Connect this repository and use:
+
+| Render setting | Value |
+|---|---|
+| Branch | `main` |
+| Runtime | `Docker` |
+| Root Directory | blank |
+| Dockerfile Path | `./Dockerfile` |
+| Docker Build Context Directory | `.` |
+| Health Check Path | `/health` |
+| Build Command | none (the Dockerfile builds the API) |
+| Start Command | none (the Dockerfile `CMD` migrates and starts the API) |
+
+Set these API environment variables:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Internal connection URL from the Render Postgres database |
+| `DATABASE_SSL` | `false` for Render's internal database URL; use `true` when the database provider requires TLS |
+| `JWT_SECRET` | A unique cryptographically random secret of at least 16 characters |
+| `CLIENT_URL` | The exact HTTPS URL of the frontend Static Site; multiple origins may be comma-separated |
+| `JWT_EXPIRES_IN` | Optional; defaults to `8h` |
+| `JWT_ISSUER` | Optional; defaults to `orbit-erp-api` |
+| `JWT_AUDIENCE` | Optional; defaults to `orbit-erp-web` |
+
+Do not set `PORT` manually; Render injects it. `NODE_ENV=production` is already set by the image.
+
+### Frontend static site
+
+Create a separate Render Static Site from the same repository:
+
+| Render setting | Value |
+|---|---|
+| Branch | `main` |
+| Root Directory | blank |
+| Build Command | `npm ci && npm run build -w client` |
+| Publish Directory | `client/dist` |
+
+Set `VITE_API_URL` to the API service's public HTTPS URL followed by `/api`, for example `https://orbit-api.onrender.com/api`. After the Static Site URL is known, set the API service's `CLIENT_URL` to that exact origin and redeploy the API.
+
+The older `server/Dockerfile` remains valid for local use with repository-root build context, but Render should use the root `./Dockerfile`. Do not use `server/./Dockerfile`, set the Root Directory to `server`, or set the build context to `server`; those settings are incompatible with the npm workspace layout and its root lockfile.
 
 ## Screenshots
 

@@ -19,7 +19,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: server/Dockerfile
+      dockerfile: Dockerfile
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-orbit}:${POSTGRES_PASSWORD:-orbit_local_password}@postgres:5432/${POSTGRES_DB:-orbit_erp}
@@ -33,7 +33,7 @@ services:
   seed:
     build:
       context: .
-      dockerfile: server/Dockerfile
+      dockerfile: Dockerfile
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-orbit}:${POSTGRES_PASSWORD:-orbit_local_password}@postgres:5432/${POSTGRES_DB:-orbit_erp}
@@ -47,7 +47,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: server/Dockerfile
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
